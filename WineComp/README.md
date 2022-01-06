@@ -1,4 +1,7 @@
-# Link to Analysis [here](https://samueljvs.github.io/Competition-Oct/)
+🥈 Congratulations! You won 2nd prize in the DataCamp Competition!
+
+
+### Link to Analysis [here](https://samueljvs.github.io/Competition-Oct/)
 
 
 ## 📖 Background
