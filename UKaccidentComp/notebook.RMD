@@ -1,0 +1,788 @@
+---
+title: "Exploring UK's Fatal Traffic Accidents"
+output:
+  html_document:
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+```{r include = FALSE}
+
+# install.packages(c("leaflet", "dygraphs", "tidygeocoder", "leaflet.extras", "wesanderson", "viridis", "ggmap", "gganimate", "gifski"))
+
+library(tidyverse)
+library(lubridate)
+library(leaflet)
+library(dygraphs)
+library(xts) 
+library(tidygeocoder)
+library(viridis)
+library(leaflet.extras)
+library(wesanderson)
+library(kableExtra)
+#library(mapdeck)
+library(scales)
+library(ggmap)
+library(gganimate)
+library(gifski)
+
+
+
+theme_set(theme_minimal(base_family = "Lato") +
+            theme(text = element_text(color = "gray12"),
+    
+    # Customize the text in the title, subtitle, and caption
+    plot.title = element_text(face = "bold", size = 14, hjust = 0.05),
+    plot.subtitle = element_text(size = 10, hjust = 0.05),
+    plot.caption = element_text(size = 10, hjust = .5),
+    
+    # Make the background white and remove extra grid lines
+    panel.background = element_rect(fill = "white", color = "white"),
+    panel.grid = element_blank(),
+    panel.grid.major.x = element_blank()
+  ))
+
+accidents <- readr::read_csv('./data/accident-data.csv')
+lookup <- readr::read_csv('./data/road-safety-lookups.csv')
+region <- read_csv("https://gist.githubusercontent.com/radiac/d91d2ed1b971c03d49e9b7bd85e23f1c/raw/1e51ebb467b809ea8dcf1d7d429581e95ac48e3d/uk-counties-to-regions.csv")
+```
+
+```{r clean, include= FALSE}
+## Firstly, keep variables of interest, flatten, and then join across look-ups
+##
+  acc_df <- accidents %>% 
+              unite(date_time, c(date, time)) %>% 
+              mutate(date_time = dmy_hms(date_time)) %>% 
+              relocate(c(date_time, number_of_casualties), .after = latitude) %>% 
+              select(-c(accident_index, accident_year, first_road_number, 
+                        second_road_class, second_road_number, special_conditions_at_site, 
+                        carriageway_hazards, day_of_week)) %>% 
+              mutate(fatal_grp = case_when(accident_severity == 1 & number_of_casualties >=3 ~ 
+                                             "high fatal",
+                                           accident_severity == 2 & number_of_casualties >=3 ~ 
+                                             "high serious",
+                                           accident_severity == 3 & number_of_casualties >=3 ~ 
+                                             "high slight",
+                                           accident_severity == 1 & number_of_casualties < 3 ~ 
+                                             "low fatal",
+                                            TRUE                                             ~ "Other"))
+
+geo_codes <- readRDS("geo_codes.RDS")
+
+## Load geo codes from tidy-geocoder package
+##
+# 
+#   geocodes <- acc_df %>% 
+#                   filter(fatal_grp != "Other") %>% 
+#                   reverse_geocode(lat = latitude, long =longitude, method = "arcgis", full_results = TRUE) %>% 
+#                   select(accident_reference, longitude, latitude, City, Subregion)
+  
+
+  ##
+  ##
+  # saveRDS(geocodes, file = "geo_codes.RDS")
+  ##
+
+  
+  
+```
+
+``` {r mapdeck, include = FALSE}
+## Takes up too much RAM error 137 in knitting :(
+
+# ms = mapdeck_style("dark")
+# token <- "pk.eyJ1Ijoic2FtanZzIiwiYSI6ImNrdzE4cXQ2ajAxOHUzMnA4OGloOTQ5Z2QifQ.Bhl6GXUuotw6eZz1Ws-xMg"
+# 
+# test_map <-  accidents %>% 
+#                   drop_na() %>% 
+#                   select(latitude, longitude)
+# 
+#  mapdeck( style = mapdeck_style("dark"), location = c(-1.5,53), pitch = 45, zoom = 5.5) %>%
+#   add_hexagon(
+#     data = test_map
+#     , lat = "latitude"
+#     , lon = "longitude"
+#     , layer_id = "hex_layer"
+#     , elevation_scale = 100
+#     ,update_view = FALSE
+#     , colour_range = colourvalues::colour_values(1:6, palette = colourvalues::get_palette("viridis")[70:256,])
+#   )
+```
+
+
+```{css, include = TRUE }
+
+/* Add some styles to the document to polish a little */
+
+h1 { color: #111; font-family: 'Helvetica Neue', sans-serif; font-size: 175px; font-weight: bold; letter-spacing: -1px; line-height: 1; text-align: center; }
+    
+h2 { color: #111; font-family: 'Open Sans', sans-serif; font-size: 30px; font-weight: 300; line-height: 32px; margin: 0 0 52px; text-align: center; }
+    
+h4 {color: #111; font-family: 'Helvetica Neue', sans-serif; font-size: 20px; line-height: 24px; margin: 0 0 24px; text-align: justify; text-justify: inter-word;}
+    
+p { color: #685206; font-family: 'Helvetica Neue', sans-serif; font-size: 14px; line-height: 24px; margin: 0 0 24px; text-align: justify; text-justify: inter-word; }    
+    
+p.b { color: #685206; font-family: 'Helvetica Neue', sans-serif; font-size: 14px; line-height: 24px; margin: 0 0 0px; text-align: justify; text-justify: inter-word; }  
+    
+ul {color: #685206; font-family: 'Helvetica Neue', sans-serif; font-size: 14px; line-height: 24px; margin: 0 0 24px; text-align: justify; text-justify: inter-word; }
+    
+ol {color: #685206; font-family: 'Helvetica Neue', sans-serif; font-size: 14px; line-height: 24px; margin: 0 0 24px; text-align: justify; text-justify: inter-word; }
+    
+```
+
+## Insights
+  
+* There were over 90,000 traffic accidents in 2020, with 202 (0.2%) of these considered fatal accidents.
+* Traffic accidents peaked in February following a large dip in April, which coincides with UK's bank holiday periods. However, this feature isn't as salient for fatal accidents.
+* In general, traffic accidents are lowest on a Monday and increase through the working week, peaking on Fridays - for fatal accidents the peak is on a Saturday.
+* Both fatal and non-fatal accidents occur late in the day, with most accidents happening around 5pm (after-work rush).
+* In conjunction with this, fatal accidents tend to occur most in fair weather conditions, in speed zones of 60-70mph, and on Class A single carriageway roads.
+* Fatal accidents have a high (75%) tendency to occur in rural UK regions, relative to other accident groups.
+* Regionally, South East England has the highest accident rate overall, however Midlands has the highest fatal accident rate (as a proportion of the regions traffic accidents).
+* In general, the aim of this report is stimulate more questions than answers.
+
+## Future Research
+
+<p class = "b">These high level findings underline several avenues for future research, such as: </p>  
+
+* Do bank holiday period causally reduce traffic accidents throughout the year, and if so by how much?
+* Is work place fatigue and rush hour timing the strongest predictor of fatal traffic accident and general accidents?
+* Will reducing speed limits (particularly for rural regions) or transforming, single to duel carriage ways reduce fatal traffic accidents?  
+
+Future research in this area would work well for building modeling capability in the average accident rate (lambda) over time, both to understand how policy interventions have historically reduced fatal accident rates and how/what potential policy intervention[s] may reduce future fatal traffic accidents.
+
+## Policy Implications
+
+1. Reducing fatal accidents could be done via two differing types of policy initiatives. Firstly, policies that aim to reduce overall traffic accidents,and thereby lower the overall potential for fatal accident to occur. By way of example, these policies could look like:  
+    a. Introducing more bank holiday during the May - November period, where traffic accidents tend to rise again.  
+    b. Implementing increased traffic safety controls during 5pm rush hour, particularity for Fridays, due to the higher rates of traffic accidents, and/or  
+    c. Increased safety messaging in regions such as South East, and East of England where traffic accident rates are highest.
+2. Secondly, targeted policy response aimed at reducing fatal traffic accidents, such as:  
+    a. Increased policing in the late evening, where fatal crashes spike again,  
+    b. Further develop public transport through rural areas, where fatal accidents rates are highest,  
+    c. Targeted safety messaging in regions and cities that have the highest proportion of fatal accident rates.
+
+
+## The UK's traffic accident report for 2020
+
+#### *There were over 90,000 traffic accidents recorded in 2020, of which, 0.2% were considered fatal...*
+
+There were about 91,200 recorded road accidents in 2020 across the UK. Of these accidents, **around 0.2% (202) were considered fatal crashes** ^[Fatal crashes are considered fatal if the crash severity is high and there are three or more casualties]. The lions share of car accident severity is typically considered slight (about 78%), then serious (20%). In general, **most traffic accidents involve one person (81%), and then two people (13%)**, with three or more people having the lowest likelihood of occurring (about 5%). Given the interest in reducing fatal accidents most of the analysis will focus on comparing fatal crashes with other accidents groups of interest. 
+
+#### *...Peak traffic accidents occur in February and drop in April, coinciding with bank holidays. Across weekdays, traffic accidents typically increase over the working week, peaking on Fridays.* 
+
+Notwithstanding the specific focus on fatal crashes, looking at the aggregate trend of crashes across 2020 reveals some notable features within the data. **Firstly, a peak in accidents occurs in February, which follows a large dip in  around April (about 3,300 accidents), coinciding with bank holidays**. Following the dip, the crash rate rises steadily through the following months, to peak again around September (9,250 accidents).
+
+```{r include = TRUE, fig.show="hold", out.width="50%"}
+## polyfreq graph
+##
+  acc_df %>% 
+    ggplot(aes(date_time)) + 
+    geom_freqpoly(binwidth = 86400) +
+    labs(title = "",
+         subtitle = "") +
+    ylab("Number of accidents") +
+    xlab("") +
+  geom_vline(xintercept = dmy_hms(c("01/01/2020 00:00:00", "02/04/2020 00:00:00", "05/04/2020 00:00:00",
+                                    "03/05/2020 00:00:00", "31/05/2020 00:00:00", "30/08/2020 00:00:00",
+                                    "27/12/2020 00:00:00", "28/12/2020 00:00:00")), 
+             colour = wes_palette("GrandBudapest2", n = 3)[[3]], linetype = "dashed") +
+  annotate("text", x = dmy_hms("01/03/2020 00:00:00") , y = 450, label = "UK holidays", 
+           colour = wes_palette("GrandBudapest2", n = 3)[[3]])
+
+## Week graph
+##
+ acc_df %>% 
+  select(date_time, accident_severity, number_of_casualties) %>% 
+    pivot_longer(accident_severity, 
+                 names_to = "Severity",
+                 values_to =  "value") %>% 
+          left_join(lookup %>% 
+                      filter(`field name` == "accident_severity") %>% 
+                      select(label, `code/format`) %>% 
+                      mutate(`code/format` = as.numeric(`code/format`)),
+                      by = c("value" = "code/format")) %>% 
+  mutate(weekday = wday(date_time, label = TRUE)) %>% 
+    ggplot(aes(x = weekday, fill = label)) +
+      geom_bar(position = "stack", alpha = 0.6) +
+   scale_fill_manual(values = wes_palette("GrandBudapest1", n = 3))+
+   ylab("Number of accidents") +
+   xlab("weekday") +
+   theme(
+     legend.title = element_blank()
+   )
+
+```
+
+<p class = "b"> To better understand the characteristics of the fatal crashes, three other comparison groups are constructed - The groups of interest are define as: </p>  
+
+1. **High fatal - this is the primary group of interest, as describe above**,  
+2. low fatal  - less than three casualties, whose severity is considered fatal 
+3. High serious - three or more casualties, whose severity is considered serious, and
+4. High slight - three or more casualties, whose severity is considered slight.
+
+#### *In addition to those considered high fatal accidents, three other accident groups are used to highlight the similarities and differences to the high fatal accident group of interest...*  
+
+This leaves 6,006 data points that will be used by way of highlighting similarities and differences to our population of interest - high fatal crashes. In general, each of the four groups have two vehicles involved in accidents on average. **High fatal accidents occur almost 4 times each week over the course of the year**, high slight accidents occur 62 times a week. However, high fatal accidents are almost 6 times less likely to occur than the next lowest accident group, high serious (about 26 accidents per week).
+
+```{r, include = TRUE}
+# Insert Table
+
+
+table01 <- acc_df %>% 
+            filter(fatal_grp != "Other") %>% 
+            group_by(fatal_grp) %>% 
+            summarise(n=n(),
+                      av_vehicles = mean(number_of_vehicles)) %>% 
+            mutate(accidents_pw = n / 52)
+
+kable(table01,
+      col.names = c("Accident group", "Number of Accidents", "Average vehicles involved", "Average accidents per week"),
+      caption = "Table 1: A breakdown of the chosen accident groups",
+      digits = 2,
+      align = "lccc") %>% 
+      kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+<p class = "b">Furthermore, this report considers a select amount of variables for exploring fatal traffic accidents, which are as follows:</p>  
+
+* Time of day, week and yearly patterns,
+* The speed limit of the area,
+* Weather Conditions,
+* Road types - namely, the road classification system ^[The road classification system in the UK defines the type of roads and their primary purpose - more information can be found [here](https://www.gov.uk/government/publications/guidance-on-road-classification-and-the-primary-route-network/guidance-on-road-classification-and-the-primary-route-network)], and
+* Regional information.
+
+#### *...Although the overall number of high fatal accidents are low, they typically follow the trend on aggregate, with similar peaks and dip in February and April respectively...*
+
+Figure 2 displays traffic accidents over time by the specified groups. Importantly, each group shares in similarities relative to the aggregate trend (see Figure 1), which are: A peak in February followed by a major dip in April, following steady a rise through the year, to then dip again around December (Christmas).
+
+```{r dygraph, include = TRUE, fig.align = 'center'}
+## Dygraph plot
+##
+
+  dy_data <- acc_df %>% 
+           filter(fatal_grp != "Other") %>% 
+            group_by(date_time, fatal_grp) %>% 
+            summarise(fatal = sum(number_of_casualties)) %>% 
+            arrange(date_time) %>% 
+            pivot_wider(names_from = fatal_grp,
+                        values_from = fatal,
+                        values_fill = 0)
+## split data
+  dy_data1 <- dy_data[,1:2]
+  dy_data2 <- dy_data[,c(1,3)]
+  dy_data3 <- dy_data[,c(1,4)]
+  dy_data4 <- dy_data[,c(1,5)]
+  
+## make xts   
+   don1 <- apply.daily(xts(x = dy_data1[,2], order.by = dy_data1$date_time), FUN=sum)
+   don2 <- apply.daily(xts(x = dy_data2[,2], order.by = dy_data2$date_time), FUN=sum)
+   don3 <- apply.daily(xts(x = dy_data3[,2], order.by = dy_data3$date_time), FUN=sum)
+   don4 <- apply.daily(xts(x = dy_data4[,2], order.by = dy_data4$date_time), FUN=sum)
+   don <- cbind(don1, don2, don3, don4)
+  
+## create dy graph  
+   dygraph(don) %>%
+    dyOptions(labelsUTC = TRUE, colors = wes_palette("GrandBudapest1", n = 4),
+               fillGraph=TRUE, fillAlpha=0.1, drawGrid = FALSE) %>%
+    dyRangeSelector() %>%
+    dyCrosshair(direction = "vertical") %>%
+    dyHighlight(highlightCircleSize = 5, highlightSeriesBackgroundAlpha = 0.2, hideOnMouseOut = TRUE) %>% 
+    dySeries("low.fatal", label = "Low fatal") %>% 
+    dySeries("high.fatal", label  = "High fatal") %>% 
+    dySeries("high.slight", label = "High slight") %>% 
+    dySeries("high.serious", label = "High serious") %>% 
+    dyRoller(rollPeriod = 14)
+```
+
+
+```{r animate, include = FALSE}
+
+# gif_gp <- acc_df %>%
+#            filter(fatal_grp != "Other") %>%
+#             mutate(day_time = round_date(date_time,
+#               unit = "weeks"
+#               )) %>%
+#             group_by(day_time, fatal_grp) %>%
+#             summarise(fatal = sum(number_of_casualties))  %>%
+#   ggplot(aes(day_time, fatal,  col = fatal_grp)) +
+#     geom_line() +
+#         scale_colour_manual(values = wes_palette("GrandBudapest1", n = 4)) +
+#       xlab("") +
+#   ylab("Number of Accidents") +
+#   theme(
+#         legend.position = "bottom",
+#         legend.title = element_blank()) +
+#       labs(title = "")  +
+#     transition_reveal(day_time)
+
+
+#anim_save("goo.gif", gif_gp)
+
+#![](goo.gif)
+
+
+# acc_df %>% 
+#            filter(fatal_grp != "Other") %>%
+#             mutate(day_time = round_date(date_time,
+#               unit = "weeks"
+#               )) %>% 
+#             group_by(day_time, fatal_grp) %>% 
+#             summarise(fatal = sum(number_of_casualties))  %>% 
+#   ggplot(aes(day_time, fatal,  col = fatal_grp)) +
+#     geom_line() +
+#         scale_colour_manual(values = wes_palette("GrandBudapest1", n = 4)) +
+#       xlab("") +
+#   ylab("Number of Accidents") +
+#   theme(
+#         legend.position = "bottom",
+#         legend.title = element_blank()) +
+#       labs(title = "")
+```
+
+
+
+
+#### *... With traffic accidents rates starting low in the morning and then rise to peak around 5-6pm. This is similar for high fatal crashes, but with another spike in the late evening.*
+
+Figure 3 (LHS) shows the distribution of accident rates over the time of day, across all days in the year. With traffic accidents lowest in the morning, **accidents tend to rise through the day to peak around 5pm**, and then steadily decrease through the evening. Figure 3 (RHS) also shows the distribution by accident groups. The three comparison groups tightly follow the aggregate trend. However for the high fatal group, the distribution appears to be slightly more stochastic, with a second peak late in the evening.  
+
+
+```{r time-day, include = TRUE, fig.show="hold", out.width="50%"}
+## graph
+    acc_df %>% 
+      filter(fatal_grp != "Other") %>% 
+      mutate(hour_of_day = update(date_time, yday = 1)) %>% 
+       ggplot(aes(hour_of_day)) + 
+        geom_freqpoly( binwidth = 600) +
+        scale_x_datetime(label = label_time(format = "%H:%M"))+
+        ylab("Number of Accidents") +
+  xlab("")
+
+# graph2
+    acc_df %>% 
+      filter(fatal_grp != "Other") %>% 
+      mutate(hour_of_day = update(date_time, yday = 1)) %>% 
+       ggplot(aes(hour_of_day, after_stat(density), colour = fatal_grp)) + 
+        geom_freqpoly( binwidth = 1800) + # 30 min breaks
+        scale_x_datetime(label = label_time(format = "%H:%M")) +
+      scale_colour_manual(values = wes_palette("GrandBudapest1", n = 4)) +
+      xlab("") +
+  ylab("Density") +
+  theme(
+        legend.position = "bottom",
+        legend.title = element_blank()) +
+      labs(title = "")
+
+```
+
+#### *Over the course of the week the high fatal accidents are likely to happen on a Saturday, relative to the other groups tendency to peak on a Friday...* 
+
+**High fatal traffic accidents are highest on Saturday, followed by Thursday (17%), and then Sunday (16%)**. High serious accidents follow a similar patterns, with a peak on Saturday (20%), followed by Friday (16%), and Sunday (17%). Broadly, accident rates across all four groups tend to be lowest through the early-mid working week with notable increases occurring around Thursday and Friday (Table 2).  
+
+
+```{r weekday-crash-table, include = TRUE}
+
+## insert weekday table by crash group.
+##
+ table <- acc_df %>% 
+    filter(fatal_grp != "Other") %>% 
+    mutate(weekday = wday(date_time, label = TRUE)) %>% 
+    group_by(fatal_grp, weekday) %>% 
+    summarise(accidents = n())  %>% 
+    ungroup() %>% 
+    group_by(fatal_grp) %>% 
+    mutate(Porpotion = scales::percent(round(accidents/sum(accidents), 2)))%>% 
+    pivot_wider(id_cols = fatal_grp,
+                names_from = weekday,
+                values_from = Porpotion)
+  
+    kbl(table, 
+        col.names = c("Accident Group", "Sun", "Mon","Tus", "Wed", "Thur", "Fri", "Sat"),
+        caption = "Table 2: Weekday accident rates by groups",
+        digits = 3,
+        align = "lccccccc") %>% 
+        kable_styling(bootstrap_options = c("striped", "hover", "condensed")) 
+
+```
+
+#### *...Counter-intuitively, most accidents occur in fair driving conditions, with high fatal crashes often occurring at higher speed limits, and on open single carriage way roads.*
+
+
+```{r weather-speed, include = FALSE }
+
+## Weather and speed table
+##
+ table03 <- acc_df %>% 
+              select(fatal_grp,  weather_conditions) %>%
+              left_join(lookup %>%  
+                         filter(`field name` == "weather_conditions") %>%
+                         mutate(code = as.numeric(`code/format`)) %>% 
+                         select(code, label), by = c("weather_conditions" = "code")) %>%
+              filter(!(label %in% c("Other", "Unknown", "Data missing or out of range"))) %>% 
+              mutate(weather_fct = as.factor(label)) %>% 
+              filter(fatal_grp != "Other") %>% 
+              mutate(weather_fct = fct_collapse(weather_fct,
+                                                Fine = c("Fine + high winds", "Fine no high winds"),
+                                                Raining = c("Raining no high winds", "Raining + high winds"),
+                                                Snowing = c("Snowing no high winds", "Snowing + high winds"))) %>% 
+              group_by(fatal_grp) %>% 
+              count(weather_fct) %>% 
+              group_by(fatal_grp) %>% 
+              mutate(prop = scales::percent(n/sum(n),1)) %>% 
+              pivot_wider(fatal_grp, 
+                          names_from = weather_fct,
+                          values_from = prop) %>% 
+                  mutate(total = "100%") %>% 
+        left_join(  
+                    acc_df %>% 
+                        select(fatal_grp,  speed_limit) %>%
+                        filter(fatal_grp != "Other") %>% 
+                        mutate(speed_fct = case_when(
+                                            speed_limit <= 30 ~ "20-30",
+                                            speed_limit > 30 & speed_limit <= 50 ~ '40-50',
+                                            TRUE ~ '60-70'),
+                               speed_fct = factor(speed_fct, levels = c('20-30', "40-50", "60-70"))) %>% 
+                        group_by(fatal_grp) %>% 
+                        count(speed_fct) %>% 
+                        group_by(fatal_grp) %>% 
+                        mutate(prop = scales::percent(n/sum(n),1)) %>% 
+                        pivot_wider(fatal_grp,
+                                    names_from = speed_fct,
+                                    values_from = prop), by = "fatal_grp") %>%
+                  mutate(totals = "100%")
+
+```
+
+Across all four groups, over 80% of traffic accident occur in fine driving conditions, with the rest occurring largely in raining conditions. **However, for high fatal traffic accidents, almost 60% occur in speed limit zones of 60-70mps**. This is in stark contrast to the other three groups, where serious and slight traffic accidents tend to occur in speed limit zones of 20-30mph (Table 3).
+
+```{r table-weather-speed, include=TRUE}
+## make to HTML table
+##
+  kable(table03,
+        caption = "Table 3: A breakdown of accident rates by weather and speed limits",
+        col.names = c("Accident Group", "Fine", "Fog or mist", "Raining", "Snowing", "Total", "20-30", "40-50", 
+                      "60-70", "Total"),
+        digits = 2,
+        align = "lcccccrrrr") %>% 
+        kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+        add_header_above(c(" ", "Weather conditions" = 5, "Speed limits" = 4))
+```
+
+Over 50% of traffic accidents occurs on A type road classifications, which is salient across all four groups. An overwhelmingly large amount of these traffic accidents also occur on single carriageway roads, and is another consistent feature across the four accident groups.
+
+
+```{r roads, include = TRUE}
+
+## Road class and road type table
+##
+ table02<- acc_df %>% 
+      select(fatal_grp,  first_road_class) %>%
+      left_join(lookup %>%  
+                filter(`field name` == "first_road_class") %>%
+                mutate(code = as.numeric(`code/format`)) %>% 
+                  select(code, label), by = c("first_road_class" = "code")) %>%
+      #filter(!(label %in% c("Unclassified"))) %>% 
+      mutate(road_fct = as.factor(label)) %>% 
+      filter(fatal_grp != "Other") %>% 
+      mutate(road_fct = fct_collapse(road_fct,
+                                        A = c("A(M)", "A"))) %>% 
+      group_by(fatal_grp) %>% 
+      count(road_fct) %>%
+      group_by(fatal_grp) %>% 
+      mutate(prop = scales::percent(n/sum(n),1)) %>% 
+        pivot_wider(fatal_grp,
+                    names_from = road_fct,
+                  values_from = prop) %>% 
+      mutate(total = "100%") %>% 
+    left_join(
+      
+          acc_df %>% 
+          select(fatal_grp,  road_type) %>%
+          left_join(lookup %>%  
+                    filter(`field name` == "road_type") %>%
+                    mutate(code = as.numeric(`code/format`)) %>% 
+                      select(code, label), by = c("road_type" = "code")) %>%
+          filter(!(label %in% c("Data missing or out of range", "Unknown", "Slip road", "One way street"))) %>% 
+          mutate(roadtype_fct = as.factor(label)) %>% 
+          filter(fatal_grp != "Other") %>% 
+          group_by(fatal_grp) %>% 
+          count(roadtype_fct) %>%
+          group_by(fatal_grp) %>% 
+          mutate(prop = scales::percent(n/sum(n),1)) %>% 
+          pivot_wider(fatal_grp,
+                      names_from = roadtype_fct,
+                      values_from = prop), by = "fatal_grp") %>% 
+          mutate(totals = "100%")
+
+## output
+##
+  kable(table02,
+        caption = "Table 4: A breakdown of accident rates by raod classificatoion and road type",
+        col.names = c("Accident Group", "A", "B", "C", "Motorway", "Unclass", "Total", "Dual carriageway", 
+                      "Roundabout", "Single carriageway", "Total"),
+        digits = 2,
+        align = "lccccccrrrr") %>% 
+        kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+        add_header_above(c(" ", "Road classification" = 6, "Road type" = 4))
+
+```
+
+#### *Regionally, South East and East of England have the highest accident rate. However, the percent of fatal accidents by region are highest in East Midlands, Scotland and Wales...*
+
+South East England has the highest total number of traffic accidents across the UK, at about 1,700. Following that is East of England (about 1,200) then South & North West England (about 1,100 each), as shown by Figure 4 (RHS). In absolute terms this is true of high fatal crashes as well, with South Each England having the highest number of accidents (at 68). **However, high fatal accidents (as a percent of total regional accidents) is highest in East Midlands, at about 5%**. (Figure 4 LHS). Following this is Scotland (at 4.9%) and then Wales (4.5%).
+
+```{r region-data}
+region_acc <- acc_df %>% 
+  drop_na() %>% 
+  filter(fatal_grp != "Other") %>% 
+  select(accident_reference, date_time, number_of_casualties, fatal_grp) %>% 
+  inner_join(geo_codes, by = "accident_reference") %>% 
+  left_join(region, by = c("Subregion" = "County"))
+
+region_acc <- region_acc %>%
+    mutate(Region = ifelse(is.na(region_acc$Region), "", region_acc$Region)) 
+
+region_acc <- region_acc %>% 
+    mutate(Region = ifelse(region_acc$City == "London", "London", region_acc$Region))
+
+region_acc <- region_acc %>% 
+    mutate(Region = ifelse(region_acc$Subregion %in% c("Middlesex", "Avon"), 
+                                          "South West England", region_acc$Region))  
+region_acc <- region_acc %>% 
+    mutate(Region = ifelse(region_acc$Subregion == "North Humberside" |
+                           region_acc$Subregion ==  "South Humberside",
+                                          "Yorkshire and the Humber", 
+                    ifelse(region_acc$Subregion == "Mid Glamorgan" |
+                            region_acc$Subregion == "Gwent" |
+                            region_acc$Subregion == "Dyfed" |
+                            region_acc$Subregion == "Clwyd ",
+                                              "Wales",
+                    ifelse(region_acc$Subregion == "Cleveland", "North West England",
+                           region_acc$Region)))) %>% 
+    mutate(Region = ifelse(region_acc$Region == "Yorkshire and the Humber", "Yorkshire and Humber",
+                           region_acc$Region))
+```
+
+```{r region-graph, include = TRUE, fig.show="hold", out.width="50%"}
+
+## All crashes by region graph
+##
+  region_acc %>% 
+            filter(!is.na(Region), Region != "") %>% 
+    group_by(Region) %>% 
+    summarise(n = n()) %>% 
+    ggplot() +
+     # Make custom panel grid
+    geom_hline(
+      aes(yintercept = y), 
+      data.frame(y = c(0:3) * 600),
+      color = "lightgrey") + 
+    # Add bars to represent the cumulative track lengths
+    # str_wrap(region, 5) wraps the text so each line has at most 5 characters
+    geom_col(aes( x = reorder(str_wrap(Region, 5), n), y = n, fill = n),
+      position = "dodge2", show.legend = TRUE, alpha = .9 )  +
+      coord_polar() +
+    scale_y_continuous(
+      limits = c(-600, 1850),
+      expand = c(0, 0),
+      breaks = c(0, 600, 1200, 1800)) +
+    theme(
+      # Remove axis ticks and text
+      axis.title = element_blank(),
+      axis.ticks = element_blank(),
+      axis.text.y = element_blank(),
+      # Use gray text for the region names
+      axis.text.x = element_text(color = "gray12", size = 10),
+      # Move the legend to the bottom
+      legend.position = "bottom"
+    ) +
+    # Annotate custom scale inside plot
+    annotate(x = 11.7, y = 700, label = "600", geom = "text", color = "gray12", size = 2) +
+    annotate( x = 11.7,  y = 1300, label = "1200",  geom = "text", color = "gray12", size =2) +
+    annotate(x = 11.7, y =1850, label = "1800", geom = "text", color = "gray12",size = 2)  +
+    # New fill and legend title for number of tracks per region
+    scale_fill_gradientn(
+      "Number of traffic accidents",
+       colours = c( "#6C5B7B","#C06C84","#F67280","#F8B195")) +
+    # Make the guide for the fill discrete
+    guides(
+      fill = guide_colorsteps(
+        barwidth = 15, barheight = .5, title.position = "top", title.hjust = .5
+      ))
+
+
+## Just fatal crashes
+##
+  region_acc %>% 
+    filter(Region != "") %>% 
+    group_by(Region, fatal_grp) %>% 
+    summarise(n = n()) %>%
+    group_by(Region) %>% 
+    mutate(prop = n/sum(n)) %>% 
+    filter(fatal_grp == "high fatal") %>% 
+    ggplot() +
+    geom_col(aes(x = reorder(str_wrap(Region, 10), prop), y = prop, fill = prop)) +
+    ylab("") +
+    coord_flip() +
+    theme(axis.title.y = element_blank(),
+          legend.position = "bottom") +
+      scale_fill_gradientn(
+      "Fatal accidents (% of total regional accidents)",
+       colours = c( "#6C5B7B","#C06C84","#F67280","#F8B195")) +
+    # Make the guide for the fill discrete
+    guides(
+      
+      fill = guide_colorsteps(
+        barwidth = 15, barheight = .5, title.position = "top", title.hjust = .5)
+      ) +
+     scale_y_continuous(labels = scales::percent)
+```
+
+#### *...With the lions share of high fatal accidents occur more often in rural areas of the UK than in urban areas.* 
+
+Splitting accidents by urban and rural locations shows a clear difference the high fatal crash group relative to others. **About 75% of accidents of occur in rural areas for the high fatal group.** The opposite is almost true for the high slight group, with about 58% in urban areas, as shown by Figure 5 (LHS).
+
+However, this is no difference in accidents occurring in the time of day across rural and urban areas and in large part follow the pre-establish trend of low accidents in the morning to higher accidents in the afternoon/early evening.  
+
+```{r urban-rural, include = TRUE, fig.show="hold", out.width="50%"}
+
+## Graph
+##
+  acc_df %>% 
+    filter(fatal_grp != "Other") %>% 
+    mutate(area_type = case_when(urban_or_rural_area == 1 ~ "Urban",
+                                   urban_or_rural_area == 2 ~ "Rural",
+                                   TRUE   ~ "missing")) %>% 
+    filter(area_type != "missing") %>% 
+    group_by(fatal_grp, area_type) %>%
+    summarise(n=n()) %>% 
+    group_by(fatal_grp) %>% 
+    mutate(prop = n / sum(n)) %>% 
+    ggplot(aes(x = reorder(fatal_grp, n), y = prop, fill = area_type)) +
+      geom_col(position = "fill") +
+  scale_fill_manual(values = wes_palette("GrandBudapest2", n =4)[c(2,1)]) +
+  xlab("Accident Group") +
+  ylab("") +
+  coord_flip() +
+  scale_y_continuous( labels = scales::percent) +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_blank())
+
+
+acc_df %>% 
+    filter(fatal_grp != "Other") %>% 
+    mutate(area_type = case_when(urban_or_rural_area == 1 ~ "Urban",
+                                   urban_or_rural_area == 2 ~ "Rural",
+                                   TRUE   ~ "missing")) %>% 
+    filter(area_type != "missing")  %>% 
+    mutate(day_time = update(date_time, yday= 1)) %>% 
+  ggplot(aes(x=day_time, after_stat(density), col = area_type)) +
+  geom_freqpoly(binwidth = 600) + # 10 min breaks
+        scale_x_datetime(label = label_time(format = "%H:%M")) +
+      scale_colour_manual(values = wes_palette("GrandBudapest2", n = 4)[c(2,1)]) +
+      xlab("") +
+  ylab("Density") +
+  theme(
+        legend.position = "bottom",
+        legend.title = element_blank()) +
+      labs(title = "")
+```
+
+#### *An interactive map can allow for monitoring and exploring traffic accidents across the UK.*
+
+We can explore all the accidents with an interactive map, clustered by number and locations. It can be further filtered by accident severity and classifying those from high (3 or more people involved), and low (less than 3 people involved) fatality rates. 
+
+```{r leaf-data}
+## create leaflet dataframe
+acc_leaf <- acc_df %>%  
+              mutate(fatal_grp = case_when(
+                      accident_severity == 1 & number_of_casualties >=3 ~ 
+                                             "high fatal",
+                      accident_severity == 2 & number_of_casualties >=3 ~ 
+                                             "high serious",
+                      accident_severity == 3 & number_of_casualties >=3 ~ 
+                                             "high slight",
+                      accident_severity == 1 & number_of_casualties < 3 ~ 
+                                             "low fatal",
+                      accident_severity == 2 & number_of_casualties < 3 ~ 
+                                             "low serious",
+                      accident_severity == 3 & number_of_casualties < 3 ~ 
+                                             "low slight",
+                TRUE                                             ~ "missing")) %>% 
+          drop_na()
+
+wes_colors <- c(wes_palette("FantasticFox1"), wes_palette("Moonrise2"))
+
+## add colors for groups
+palPwr <- leaflet::colorFactor(palette = c("high fatal" = wes_colors[5],
+                                           "high serious" = wes_colors[4],
+                                           "high slight" = wes_colors[3],
+                                          "low fatal" = wes_colors[2], 
+                                           "low serious" = wes_colors[8],
+                                           "low slight" = wes_colors[6]),
+                               domain = acc_leaf$fatal_grp)
+
+fatal <- acc_leaf %>%  filter(accident_severity == 1)
+  
+serious <- acc_leaf %>%  filter(accident_severity == 2)
+  
+slight <- acc_leaf %>%  filter(accident_severity == 3)
+
+```
+
+``` {r leaftlet, include = TRUE}
+
+# first prepare a leaflet plot ...
+  leaflet(acc_leaf) %>% 
+  addProviderTiles("CartoDB.Positron") %>% # consider also "Stamen.Toner"
+  addCircleMarkers(data = fatal,
+                   radius = 10, # size of the dots
+                   fillOpacity = .7, # alpha of the dots
+                   stroke = FALSE, # no outline
+                   color = palPwr(fatal$fatal_grp),
+                   clusterOptions = markerClusterOptions(),
+                   group = "Fatal") %>% 
+    addCircleMarkers(data = serious,
+                   radius = 10, # size of the dots
+                   fillOpacity = .7, # alpha of the dots
+                   stroke = FALSE, # no outline
+                   color = palPwr(serious$fatal_grp),
+                   clusterOptions = markerClusterOptions(),
+                   group = "Serious") %>% 
+  addCircleMarkers(data = slight,
+                   radius = 10, # size of the dots
+                   fillOpacity = .7, # alpha of the dots
+                   stroke = FALSE, # no outline
+                   color = palPwr(slight$fatal_grp),
+                   clusterOptions = markerClusterOptions(),
+                   group = "Slight") %>% 
+  leaflet::addLegend(position = "bottomright",
+            values = ~fatal_grp, # data frame column for legend
+            opacity = .7, # alpha of the legend
+            pal = palPwr, # palette declared earlier
+            title = "Accident Groups") %>% # legend title
+  leaflet::addLayersControl(overlayGroups = c("Fatal", "Serious", "Slight"),
+                   options = layersControlOptions(collapsed = FALSE)) %>% 
+  leaflet.extras::addResetMapButton()
+
+```
+
+## Annex
+
+### Citations
+
+
+* Cambon J, Hernangómez D, Belanger C, Possenriede D (2021). tidygeocoder: An R package for
+  geocoding. Journal of Open Source Software, 6(65), 3544,https://doi.org/10.21105/joss.03544 (R package version 1.0.5)
+  
+*  Dan Vanderkam, JJ Allaire, Jonathan Owen, Daniel Gromer and Benoit Thieurmel (2018). dygraphs: Interface to 'Dygraphs' Interactive Time Series Charting Library. R package version 1.1.1.6. https://github.com/rstudio/dygraphs
+
+* Joe Cheng, Bhaskar Karambelkar and Yihui Xie (2021). leaflet: Create Interactive Web Maps with the JavaScript 'Leaflet' Library. R package version 2.0.4.1. https://rstudio.github.io/leaflet/
+
+* Karthik Ram and Hadley Wickham (2018). wesanderson: A Wes Anderson Palette Generator. R package version 0.3.6. https://github.com/karthik/wesanderson
+
