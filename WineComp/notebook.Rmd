@@ -1,0 +1,426 @@
+# Hakuna Moscato. It means drink wine - A targeted approach to regional wine promotions
+
+```{r setup , include = FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+```
+
+```{r loadpkd, include = FALSE}
+library(tidyverse)
+library(vroom)
+library(cluster)
+theme_set(theme_minimal())
+pro_df <- vroom("data/russian_alcohol_consumption.csv")
+
+```
+
+## Executive Summary
+
+* The next 10 regions for targeting wine promotions are as follows: Ivanovo, Kaliningrad, Kaluga, Kursk, Lipetsk, Orenburg, Ryazan, Samara, Volgograd, and Yaroslavl (Oblasts).
+* The regional wine promotion analysis draws on several underlying features from the alcohol data to help target the next 10 regions for the up-coming wine promotion.
+* Each region draws on similarities of Saint Petersburg's consumption preferences for beer and wine, with an emphasis on changes in regional consumer patterns over time. 
+* Through clustering, 12 regions were identified that showed a marked change in consumption preferences for wine and beer throughout the period of 1998-2016.
+* Each region experienced similar patterns to Saint Petersburg - that is- a marked shift from beer consumption and an increase in wine consumption.
+* Of the 12 regions clustered with Saint Petersburg, 10 were selected; two were excluded because they had the least similar traits, relative to the other regions.
+* Notwithstanding this, there are limitation to the analysis. It does not account for market size, demographic information and future growth. Therefore these regions need to be considered alongside other strategic business decisions.
+
+## You had me at Merlot - regional consumers wine and beer preferences
+
+Consumers habits, on average, across Russia have been changing over time vis-a-vis the consumption of beer, wine, vodka, champagne and brandy (Figure 1). Since 1998, beer had the highest per capita consumption in litres (on average 20 L per person), following this had been vodka (average 12 L per person), then wine (3 L), champagne (1 L), and brandy (0.3 L). Over time, consumption in beer has risen substantially to an average 66 L per person in 2012, then falling to an average of 49 L per capita in 2016. Vodka has steadily declined in consumption over time to about half that of 1998 per capita consumption levels (7 L).  Whereas wine has increased almost 100% since 1998, going from an average of 3 L to 6 L, per person, surpassing Vodka. Brandy and Champagne are not heavily consumed across Russia, and at present 0.7 L and 1 L per capita was consumed in 2016. 
+
+
+```{r chart-1, fig.show="hold", out.width="50%", fig.topcaption=TRUE, fig.cap= "Figure 1: Average consumption trends across Russia"}
+
+#  Colors
+#  "#252D62" - Pukeko
+#  "#E1C29F" - Sand
+#  "#4C2F48" - Flax
+#  "#C7BCD1" - lilac
+#  "#A3C6D4" - Sky
+
+## Over time Consumption
+##
+  pro_df %>% 
+      group_by(year) %>% 
+      summarise(across(where(is.numeric), ~ mean(.x, na.rm = TRUE))) %>%  #let's collapse data
+    pivot_longer(!year, names_to = "commodity", values_to =  "sales") %>% 
+    ggplot(aes(x = year,y= sales, color = commodity)) +
+  scale_color_manual(values = c("#252D62","#E1C29F","#4C2F48","#C7BCD1","#A3C6D4")) +
+      geom_line(size = 1)+
+      ylab("Per Capita Consumption (Litres)") +
+      xlab("Years")
+
+## consumption change from 1998 to 2016
+##
+  pro_df %>% 
+      filter(year %in% c(1998, 2016)) %>% 
+      group_by(year) %>% 
+      summarise(across(where(is.numeric), ~ mean(.x, na.rm = TRUE))) %>%  #let's collapse data
+    pivot_longer(!year, names_to = "commodity", values_to =  "sales") %>% 
+    pivot_wider(names_from = year, values_from = sales, names_prefix = "y_") %>% 
+    mutate(percent_change = ((y_2016- y_1998)/y_1998)*100,
+           commodity = fct_reorder(commodity, (percent_change))) %>% 
+    ggplot(aes(commodity, percent_change, fill = commodity)) +
+            geom_col() +
+            coord_flip() +
+					scale_fill_manual(values = c("#C7BCD1","#4C2F48","#A3C6D4" ,"#252D62","#E1C29F")) +
+					xlab("") +
+					ylab("% Change from 1998 - 2016") +
+          theme(legend.position = "none")
+
+```
+
+Despite the aggregate trend, these consumption patterns vary across all 84 regions of Russia. Saint Petersburg, whose success from the wine promotion, closely follows aggregate consumption trends for Russia trend (Figure 2). That is, a rise and fall in per capita beer consumption, alongside steadily increasing in wine consumption (Figure 2). 
+
+
+```{r chart-2, fig.show="hold", out.width="50%", fig.topcaption=TRUE, fig.cap= "Figure 2: Consumption trends across Saint Petersburg"}
+
+#  Colors
+#  "#252D62" - Pukeko
+#  "#E1C29F" - Sand
+#  "#4C2F48" - Flax
+#  "#C7BCD1" - lilac
+#  "#A3C6D4" - Sky
+
+## Over time for St P's
+##
+  pro_df %>% 
+    filter(region == "Saint Petersburg") %>% 
+      group_by(year) %>% 
+      summarise(across(where(is.numeric), ~ sum(.x, na.rm = TRUE))) %>%  #let's collapse data
+    pivot_longer(!year, names_to = "commodity", values_to =  "sales") %>% 
+    ggplot(aes(x = year,y= sales, color = commodity)) +
+       scale_color_manual(values = c("#252D62","#E1C29F","#4C2F48","#C7BCD1","#A3C6D4")) +
+      geom_line(size = 1)+
+      ylab("Per Capita Consumption (Litres)") +
+      xlab("Years")
+  
+ ## % change for St P's 
+ ##  
+  pro_df %>% 
+      filter(year %in% c(1998, 2016), region == "Saint Petersburg") %>% 
+      group_by(year) %>% 
+      summarise(across(where(is.numeric), ~ sum(.x, na.rm = TRUE))) %>%  #let's collapse data
+    pivot_longer(!year, names_to = "commodity", values_to =  "sales") %>% 
+    pivot_wider(names_from = year, values_from = sales, names_prefix = "y_") %>% 
+    mutate(percent_change = ((y_2016- y_1998)/y_1998)*100,
+           commodity = fct_reorder(commodity, (percent_change))) %>% 
+    ggplot(aes(commodity, percent_change, fill = commodity)) +
+            geom_col() +
+            coord_flip() +
+					scale_fill_manual(values = c("#C7BCD1","#252D62","#4C2F48","#E1C29F","#A3C6D4")) +
+					xlab("") +
+					ylab("% Change from 1998 - 2016") +
+          theme(legend.position = "none")
+```
+
+## Read betweeen the Wines - establishing a meaningful relationship
+
+Comparing Saint Petersburg against other regions wine and beer consumption, several important features arise within the data:  
+
+* Firstly, it would be a manually exhaustive exercise to untangle consumption trends between regions that are similar to Saint Petersburg, given the high (84) number of regions within Russia (as shown by Figure 3).
+
+* Wine consumption across almost all regions has steadily increased over the 1998-2016 time period, with Saint Petersburg among the upper-mid level of wine consumption.
+
+* A notable downward shift in beer consumption has occurred for most regions, returning to similar levels of 1998 per capita consumption   - this is particularly salient for Saint Petersburg.
+
+* There a appears to be some pattern of substitutability between beer and wine consumption over time. That is, as beer consumption has fallen over more recent times, this has coincided with increasing wine consumption.
+
+* Two notable peaks within the data. First, a spike in wine consumption around 2005, which likely reflects a phenomenal vintage experienced globally for wine producers. Second, a general upwards shift in alcohol consumption occurred around the 2008-09 global recession.
+
+* One obvious outlier is beer consumption per capita for Zabaykalsky Krai; reaching the heights of 207 L in 2006, this amounts to 6 L of beer per day, per person.
+
+```{r wine-vs-beer, fig.show="hold", out.width="50%", fig.topcaption=TRUE, fig.cap= "Figure 3: Wine and beer consumption, regional comparisons"}
+
+## Wine consumption over time
+##
+
+
+
+## TO DO: 
+
+  pro_df %>% 
+    drop_na() %>% 
+      ggplot(aes(year, wine, color = region, na.rm=TRUE)) +
+    geom_line(aes(group = region), color = "grey", alpha = 0.5, size = 0.5) + 
+    geom_line(data =  pro_df %>% 
+            filter(region == "Saint Petersburg"), 
+            aes(year, wine), color = "#69b3a2", size = 1.2) +
+    theme(legend.position="none") +
+    geom_label( label = "Saint Petersburg",
+                x = 2014, 
+                y = 15.5,
+                label.size = 0.35,
+                color = "#69b3a2")
+
+## Beer consumption over time
+##
+  pro_df %>% 
+    drop_na() %>% 
+      ggplot(aes(year, beer, color = region, na.rm=TRUE)) +
+    geom_line(aes(group = region), color = "grey", alpha = 0.5, size = 0.5) + 
+    geom_line(data = pro_df %>% 
+            filter(region == "Saint Petersburg"), 
+            aes(year, beer), color = "#69b3a2", size = 1.2) +
+    theme(legend.position="none") +
+        geom_label( label = "Saint Petersburg",
+                x = 2010, 
+                y = 150,
+                label.size = 0.35,
+                color = "#69b3a2")
+
+  
+```
+
+
+Notwithstanding the chaos of Figures 3 & 4, a pattern of substitutability of beer and wine emerges, and is a salient feature for Saint Petersburg beer and wine consumption. substitutability might be more prevalent in Saint Petersbrug, as a major Russian port, might be more sensitive to prices changes and choices for beer and wine, thereby having a greater impact on consumer choices. Inland regions within Russia may be less sensitive to prices, as they have less to choose from, and likely faces higher (possibly fixed) costs.
+
+Leveraging this relationship to find other regions within Russia whose consumption patterns are similar to Saint Petersburg, Figure 4 plots a ratio of beer and wine consumption over time for all regions. This captures changes in consumers beer and wine habits across regions and will be used to identify regions, that: 
+
+1. Have initially high beer and low wine consumption that is somewhat stable,
+2. Then experience a decrease in beer to wine consumption (through either consuming less beer/and or more wine).  
+
+There are also other regional trends within Figure 4, Namely, regions with constant low beer to wine consumption, constant high beer to wine consumption and then regions where there is no clear pattern; likely due to other unobserved factors.
+
+
+```{r beer-wine, fig.cap = "Figure 4: Beer to wine consumption ratio, regional comparisons", fig.topcaption=TRUE}
+
+## Beer to wine ratio
+##
+  pro_df %>% 
+      group_by(region, year) %>% 
+      summarise(across(where(is.numeric), ~ sum(.x, na.rm = TRUE))) %>%  #let's collapse data
+        mutate(beer_wine = beer/wine) %>% 
+    ggplot(aes(x = year, y= beer_wine)) +
+      geom_line(aes(group = region), color = "grey", size = 0.5, alpha = 0.5) +
+    geom_line(data = pro_df %>% 
+                    filter(region == "Saint Petersburg") %>% 
+                    group_by(year) %>% 
+                    summarise(across(where(is.numeric), ~ sum(.x, na.rm = TRUE))) %>%  #let's collapse data
+                      mutate(beer_wine = beer/wine),
+                aes(year, beer_wine), color = "#69b3a2", size = 1.2) +
+                ylab("Beer to Wine Ratio") +
+      geom_label( label = "Saint Petersburg",
+                x = 2014, 
+                y = 40.5,
+                label.size = 0.35,
+                color = "#69b3a2")
+
+
+```
+
+
+## Here for the right Riesling - A clustered apporach to identifying sub-groups 
+
+Taking a clustering approach to group sub-populations of regions across Russia over time vis-a-vis the wine-beer ratio, identifies data-driven groups (regions) who have similar features to each other. This serves as an initial benchmark for grouping regions by similar beer and wine consumption patterns. Based on initial exploratory data analysis, 4 cluster groups are chosen. This yields 4 distinct groups, whose consumption patterns are shown in the below table - showing average alcohol consumption between 1998 and 2016.
+
+
+```{r cluster-analysis, include=FALSE}
+
+set.seed(123) # this to make it reproducible 
+
+cluster_bw <- pro_df %>% 
+                    mutate(beer_wine = beer/wine) %>% 
+                    select(region, year, beer_wine) %>% 
+                    pivot_wider(names_from = year, values_from = beer_wine) %>% 
+                    drop_na() %>% 
+                    column_to_rownames(var = "region")
+
+cluster_bw_mat <- as.matrix(cluster_bw)
+
+kmodel_bw <- kmeans(cluster_bw_mat, centers = 4)
+
+cluster_bw <- cluster_bw %>% 
+                mutate(cluster = kmodel_bw$cluster) %>% 
+                  rownames_to_column((var = "region")) %>% 
+                  pivot_longer(cols = matches("[1-9]"), 
+                               names_to = "year",
+                               values_to = "beer_wine") %>% 
+                    mutate(year = as.numeric(year),
+                         cluster = as.factor(cluster))
+```
+
+```{r , include=FALSE}
+
+promotion_group <- cluster_bw %>% 
+                      left_join(pro_df, by = c("year", "region"))
+
+library(kableExtra)
+
+  table <- promotion_group %>% 
+              filter(year %in% c(1998, 2007, 2016)) %>% 
+              select(-c(beer_wine, brandy, champagne)) %>% 
+              group_by(year, cluster) %>% 
+              summarise(across(where(is.numeric), ~mean(.x, na.rm =TRUE)), n = n()) %>% 
+              pivot_wider(names_from = year, values_from = c(wine,beer,vodka))
+
+```
+
+```{r cluster-table}
+## Note - add group 3 sub-caption about St P
+##
+
+    kbl(table, 
+        col.names = c("Group", "Regions", "1998", "2007", "2016", "1998",  "2007","2016", "1998", "2007", "2016"),
+        caption = "Table 1: Comparing Regional Groupings Average Alcohol Consumption",
+        digits = 1,
+        align = "llllcccrrr") %>% 
+        kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+        add_header_above(c(" ", " ", "Wine" = 3, "Beer" = 3, "Vodka" = 3))
+```
+
+
+Each group of regions per capita alcohol consumption patterns are nuanced but the following can be inferred:     
+
+* All clusters experience initially high average beer consumption increases from 1998 to 2007 with tapering consumption from 2007 to 2016. However, the first two (groups 1 and 2) groups have lower overall wine consumption and does not increase between 2007 and 2016. 
+* The third group has similar beer consumption patterns but experiences the steepest decline in beer consumption from 2007 to 2016, whilst wine consumption remains high. 
+* Finally, the fourth group increases beer consumption in 2007 but this remains the lowest level of beer consumption relative to the other regions, and remains low through to 2016, with high wine consumption through the 2007-16 period. 
+* All regions experience decreases in Vodka consumption, although this is not as salient for the fourth group.
+
+
+```{r cluster-line, fig.cap = "Figure 5: Cluster beer to wine comparisons, over time" , fig.topcaption = TRUE}
+
+promotion_group %>% 
+    ggplot(aes(year, beer_wine, color = cluster)) +
+      geom_point(position = "jitter", alpha = 0.5) +
+      scale_colour_viridis_d() +
+  geom_smooth(se = FALSE) +
+  ylab("Beer to Wine Ratio")
+
+```
+
+
+These trends are more easily interpreted from Figure 5. Where group 3's beer to wine ratio is the most similar to Saint Petersburg beer to wine consumption ratio. This is because both Saint Petersburg is within Group 3 and contains 12 other regions with a similar beer to wine consumption pattern.
+
+Finally, Figure 6 plots a region by region break down for group 3 to inspect visually how well clustering worked. In general, this appears to have captured regions similar to Saint Petersburg. There are two outliers,  Ulyanovsk (Oblast) whose initially high and spiked beer to wine consumption stands out. Secondly, Primorky (Krai), who geographical location is much further away than all other regions.
+
+The remaining regions - Ivanovo, Kaliningrad, Kaluga, Kursk, Lipetsk, Orenburg, Ryazan, Samara, Volgograd, and Yaroslavl (Oblasts) - are considered the next 10 regions should be targeted for wine promotion events.
+
+        
+```{r cluster-compare, fig.cap= "Figure 6: A apaghetti chart of cluster 3, beer to wine consumption ratio", out.width = "90%", fig.topcaption = TRUE}        
+  
+
+cluster_bw %>% 
+    filter(cluster ==3) %>% 
+ ggplot(aes(year,beer_wine, color=region)) +
+    geom_line(data = cluster_bw %>% 
+                        filter(cluster == 3) %>% 
+                        mutate(region2 = region) %>% 
+                        select(-region), 
+        aes(group=region2), color = "grey", size = 0.5, alpha = 0.5) +
+    geom_line(aes(color=region), color = "#69b3a2", size = 1.2 ) +
+    theme(
+      legend.position = "none",
+      plot.title = element_text(size=14),
+      panel.grid = element_blank()
+    ) +
+    facet_wrap(.~ region) +
+      ylab(" Beer to Wine Ratio")
+
+```
+
+
+Figure 7 shows beer (LHS) and wine (RHS) per capita consumption over time. This shows that Cluster 3's aggregate beer and wine consumption trend looks similar to that of Saint Petersburg consumption patterns in Figure 3. Giving more confidence that the clustering method has performed the task well. 
+
+
+```{r group-beer-wine, fig.cap = "Figure 7: Beer and wine consumption, compared by cluster", fig.topcaption = TRUE, fig.show= "hold", out.width= "50%"}
+promotion_group %>%
+    ggplot(aes(year, beer, color = cluster)) +
+      geom_point(position = "jitter", alpha = 0.5) +
+      scale_colour_viridis_d() +
+  geom_smooth(se = FALSE) +
+  xlab("Average per capita Beer consumption") +
+  labs(caption = "Note: Cluster 3 contains Saint Petersburg")
+
+promotion_group %>%
+    ggplot(aes(year, wine, color = cluster)) +
+      geom_point(position = "jitter", alpha = 0.5) +
+      scale_colour_viridis_d() +
+  geom_smooth(se = FALSE) +
+  xlab("Average per capita Beer consumption")
+
+```
+
+
+```{r, include= FALSE}
+table_2 <-promotion_group %>% 
+    filter(cluster == 3,
+      (year %in% c(1998, 2016)),
+      !(region %in% c("Primorsky Krai", "Ulyanovsk Oblast"))) %>% 
+              select(-c(beer_wine, brandy, champagne)) %>% 
+              group_by(region, year) %>% 
+              summarise(across(where(is.numeric), ~mean(.x, na.rm =TRUE))) %>% 
+              pivot_wider(names_from = year, values_from = c(wine,beer,vodka))
+```
+
+
+```{r final-10}
+
+    kbl(table_2, 
+        col.names = c("Regions", "1998", "2016", "1998",  "2016", "1998", "2016"),
+        caption = "Table 2: The 10 Final Regions: Wine, Beer and Vodka Consumption, Over Time",
+        digits = 1,
+        align = "lllccrr") %>% 
+        kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+        add_header_above(c(" ", "Wine" = 2, "Beer" = 2, "Vodka" = 2))
+```
+
+
+## Time to Wine down 
+
+Through clustering (kmeans) techniques, guided by exploratory analysis, 10 regions were identified that showed similar changes in consumption patterns to Saint Petersburg. The focus on trends over time to capture consumers preference changes as the means for grouping regions together is one way of doing this but there are likely other approaches.
+
+For instances, taking the latest year of consumer preferences to cluster regions by, but this may lead to miss-judging important features of the data. Namely, the change in regions beer and wine consumption over time.
+
+### A Word of Caution
+
+This is only one approach to identifying regions similar to Saint Petersburg and due to data constraints, does not consider other important variables of interest that might help determine consumption trends and representative consumer insights. Ideally there would additional information such as:  
+
+* Demographic differences between regions,
+* Price data for commodities to determine substitution effects,
+* Geographical data, such as distance from Saint Petersburg or distance from Capital, as well as indicators for being landlocked or not.
+
+Finally, and most importantly, this analysis should be consider alongside other strategical goals of the business. For instance, this clustering technique does not considered potential future regional economic growth and market size or identifying best future opportunities. It's unclear how well these regions align logistically to stores around Russia. Further research is required to make the best decision possible for successful wine promotions campaign across Russia. 
+
+## Annex
+
+
+```{r, fig.cap = "Figure 1 Annex: Elbow (LHS) and Silhouette (RHS) plot", fig.topcaption = TRUE, fig.show= "hold", out.width= "50%"}
+# Robustness checks
+
+# Use map_dbl to run many models with varying value of k (centers)
+tot_withinss <- map_dbl(1:10,  function(k){
+  model <- kmeans(x = cluster_bw_mat, centers = k)
+  model$tot.withinss
+})
+
+# Generate a data frame containing both k and tot_withinss
+elbow_df <- data.frame(
+  k = 1:10,
+  tot_withinss = tot_withinss
+)
+
+# Plot the elbow plot
+ggplot(elbow_df, aes(x = k, y = tot_withinss)) +
+  geom_line() +
+  scale_x_continuous(breaks = 1:10)
+
+
+# Use map_dbl to run many models with varying value of k
+sil_width <- map_dbl(2:10,  function(k){
+  model <- pam(cluster_bw_mat, k = k)
+  model$silinfo$avg.width
+})
+
+# Generate a data frame containing both k and sil_width
+sil_df <- data.frame(
+  k = 2:10,
+  sil_width = sil_width
+)
+
+# Plot the relationship between k and sil_width
+ggplot(sil_df, aes(x = k, y = sil_width)) +
+  geom_line() +
+  scale_x_continuous(breaks = 2:10)
+```
+
+
