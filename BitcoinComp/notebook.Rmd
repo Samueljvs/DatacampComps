@@ -1,17 +1,18 @@
----
-output:
-  html_document:
-    code_folding: hide
----
 
-# Should your fund invest in Bitcoin?
+# 'Neither too much, nor too little, but just right'. A portfolio assessment on the Goldie-locks of Bitcoin 
 
-
-
-```{r}
-knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+```{r echo = FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE, echo = FALSE)
 ```
 
+## Recommendations
+
+* In a non-traditional fashion, **Bitcoin appears to take the elevator down and the elevator back up** when it comes to stock-market performance,
+* Therefore, we recommend the **Glodie-locks** portfolio for the company, with shares approximately at 60% in US gold, 35% in the S&P 500 and 5% in Bitcoin,
+* This amount leads to highest returns per unit of risk, relative to holding little to none, despite the increase in overall portfolio volatility,
+* We believe that Bitcoin will also be a suitable hedge for inflation given the associated high returns it yields,
+* It's also important to maintain a high portfolio weight in gold, as this appears to naturally hedge against some of the downside risk that comes with holding Bitcoin,  
+* And although the nature of the asset is highly volatile with large down-side risks, diversification still remains a better strategy for reducing overall portfolio risk-return, than putting all the eggs in one basket.
 
 ```{r pck-load, include = FALSE}
 install.packages(c("PerformanceAnalytics", "quantmod", "tseries", "PortfolioAnalytics"))
@@ -22,6 +23,7 @@ library(PerformanceAnalytics)
 library(quantmod)
 library(tseries)
 library(PortfolioAnalytics)
+library(kableExtra)
 
 # 
 # bitcoin <- readr::read_csv('./data/bitcoin-usd.csv')
@@ -36,21 +38,17 @@ sp500_xts <-  as.xts(read.zoo('./data/sp500.csv', sep = ",", header = TRUE))
 
 ## Potfolio analysis
 
-It's the expectation of gains that need to be balanced against the risk of losses. Reduce risks of suffering large loss - there are two tricks
- 1) Carefully select diversified porfolios - one should avoid investing in one single investment and find good combinations of others - to reduce risk and increase returns
- 2) Use back testing to test the portfolio analysis 
- 
-To conduct this you need to define portfolio Wights and Returns
-* Weights tell you the percentage of total value invested into each asset
-* returns measure relative increase over the period
+When selecting the amount of Bitcoin to invest in, we need to find a balance in the expectation of gains vs.  the risk of losses. We can reduce the risks of suffering large losses via two simple methods. 
 
+1. Carefully selecting a diversified portfolio and avoid investing in one single investment can reduce risk and increase returns,  
+2. Use back testing to test the portfolio analysis. 
 
 ```{r}
 
 ## plot data - check if anything weird is going on (e.g. missing vals)  - looks fine
 ##
-  plot.zoo(bitcoin_xts)
-  plot.zoo(sp500_xts)
+  plot.zoo(Cl(bitcoin_xts), main = "Close price Bitcoin")
+  plot.zoo(Cl(sp500_xts), main = "Close price S&P 500")
   plot.zoo(monthly_xts[,1], main = "USD GOLD")
   plot.zoo(monthly_xts[,2], main = "US CPI")
   
@@ -65,99 +63,75 @@ To conduct this you need to define portfolio Wights and Returns
   
 ```
 
-How portfolio weight of each asset, despite bitcoin outstripping the value of SP 500 it's wise to invest in both that generate good return whilst mitigating risk loss. Reduce risk in holding both is good practice for diversifying risk. How good is the portfolio diversification, need to investigate how investment is spread across each asset.
+Firstly, the figures above show how dips in each equity occurring at different time points, but a general upwards trend in close prices.
 
-How to set weights?
+Secondly, the final figure above shows the close prices of S&P500 against Bitcoin. Despite Bitcoin outstripping the value of SP 500, it's wise to invest in both assets that generates solid returns whilst mitigating loss. To do this, we need to understand the inherent risk associated with each equity and their return performance. This information which will guide the constraints we want to set in order to optimize a risk-off portfolio for the company.
 
-1) Betting on 1 Asset - speculative and likely to be inefficient
-2) Equal weight - perfect diversification of assets in each risky asset (if assets are similar in terms of risk and reward)
-3) weights proportional to the market value to the assets, over-weighting stocks of big firms an under-weighting stocks of small firms. 
+To decide how much Bitcoin we want in the portfolio we need to define the portfolio weights and their returns: 
 
-However, to avoid extreme losses don't put all the eggs in one basket
+* Weights tell you the percentage of total value invested into each asset
+* returns measure relative increase over the period
 
-By way of example, if we took close values at the September month 2014
+### A general stratergy for weight selections over time
 
-```{r port-weights}
-## take close price and weight them by their value
-##
-  in_vals <- first(merge(monthly_xts[,1], Cl(bitcoin_month), Cl(sp500_month)))
-  weights <- in_vals / sum(in_vals)
-  barplot(coredata(weights))
-```
+In general, there a three ways to think about setting weights:  
 
-### Simple returns
+1. Betting on 1 Asset - speculative and likely to be inefficient,  
+2. Equal weights - perfect diversification of assets in each risky asset (if assets are similar in terms of risk and reward),  
+3. Weights proportional to the market value to the assets, over-weighting stocks of big firms an under-weighting stocks of small firms. 
 
-Returns are the relative changes in value.
-Weighted average reruns take into account, is the sumporduct of weights and corresponding returns.
+However, to avoid extreme losses, *'don't put all your eggs into one basket'*, that is - a portfolio made up of only the S&P500 or Bitcoin or US gold. Further from this, we need to consider how to manage returns over time.
 
-```{r simple-returns}
+As the values of assets change over time, you can either be a *passive investor and not trade any further*; this is called the buy and hold strategy. **Or** to buy and trade at the close of each day, month, quarter or year. This process results in re-balancing a portfolio, such that the portfolio is re-weighted correctly to reflect the desired proportional amount of each asset.
 
-fin_vals <- last(merge(monthly_xts[,1], Cl(bitcoin_month), Cl(sp500_month)))
+## Portoflio Perofrmance
 
-returns_simple <- diff(rbind(in_vals, fin_vals))[2,] * coredata(weights)
+### Returns and the Sharpe ratio
 
-returns_simple
-```
-
-### returns over time
-
-As values of assets change over time you can either be a *passive investor and not trade any further* - this is called the buy and hold strategy. The second is to buy and trade at the close of each day(time period) that results in re balance of the portfolio, such that the portfolio is weighted correctly in the portfolio shares over time. 
-
-```{r}
+```{r, fig.cap= "Returns over time"}
 ## over-time returns with PerformanceAnalytics
 ##
  returns <- Return.calculate(merge(monthly_xts[,1], Cl(bitcoin_month), Cl(sp500_month)))[(-1),]
 
-plot.zoo(returns)
+  names(returns) <- c("gold_usd", "Bitcoin", "SP500")
+  plot.zoo(returns)
 
-  weights_val <- c(0.4,0.1,0.5)
-## Weights over time
-##
- pf_ret <- Return.portfolio(returns, weights = weights_val,
-                               rebalance = "months", verbose = TRUE)
+  #returns <- Return.calculate(merge(monthly_xts[,1], Cl(bitcoin_month), Cl(sp500_month)))[(-1),]
+  
+#   weights_val <- c(0.4,0.1,0.5)
+# ## Weights over time
+# ##
+#  pf_ret <- Return.portfolio(returns, weights = weights_val,
+                               # rebalance = "months", verbose = TRUE)
 ```
 
-## Portoflio returns
+Portfolio performance is used make predictions about the past and future performance of any given portfolio. To do this, we need consider the performance of risks and rewards for each equity (portfolio volatility, and mean return). Portfolio volatility is the de-meaned return -that is, how much it varies from the mean. The higher the volatility the higher the probability of  positive and/or negative returns occurring for a given time period. 
 
-Portfolio performance is used make predictions about the past and future portfolio performance.
-In general we consider performance across risk and rewards ( portfolio volatility, and mean return)
+The S&P 500 is generally considered the most important benchmark portfolio for investors in stocks. To interpret these numbers we need a benchmark to compare with - typically a risk free asset such as the TSY bill. And because there is no risk - the expected return itself is called the risk free rate. The difference between the risk-free-rate (asset) and the risky portfolio is called the excess Return of Risky Portfolio, and it tells us that how much additional return you can expect on the portfolio compared to the risk free rate.
 
-portfolio volatility is the de-meaned return - how much it vary s from the mean. high the volatility the higher the probability of a higher and lower returns across periods. Geometric mean reutnr accounts for the non-leaner offsets for losses and returns
-
-The S&P 500 is generally considered the most important bench portfolio for investors in socks.
-To interpret these numbers we need a benchmark to compare with - typically a risk free asset such as the TSY bill. Because there is no risk - the  expected return itself is called the risk free rate.
-
-the difference between the risk-free-rate (asset) and the risky portfolio is called the excess Return of Risky Portfolio, and it tells us that how much additional return you can expect on the portfolio compared to the risk free rate.
-
-capital allocation line - line between the risk free asset and portfolio - when you go beyond the portfolio return the investor takes leverage (borrows more capital to do so). The slope of this line is equal to the mean excess return of the portfolio / volatility fo the risk portfolio returns. the reward of the per unit o risk taken sharpe ratio.
-
+Using the excess return and volatility in combinations gives us the Sharpe ratio, which shows the return per unit of risk taken. The higher the ratio is the more return your portfolio gets, for the same per unit of risk.
 
 ```{r portfolio-performance}
-##
-plot.zoo(returns)
-table.CalendarReturns(returns)
-# Computing the mean monthly return
-
-mean.geometric(returns)
-
-# volatility
-StdDev(returns)
 
 ## Sharpe ratio - the excess return /  standard deviation
-Return.annualized(returns)
-barplot(StdDev.annualized(returns))
+barplot(StdDev.annualized(returns), main = "Shapre Ratio for each equity")
 
 # typically we look at the annualized performance of these stocks to see what investment looks like over a 1 year horizon. assuming risk-free rate of 0
 
-table.AnnualizedReturns(returns)
+df <- table.AnnualizedReturns(returns)
 
+
+kable(df) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
 ```
 
-### rolling estimation of returns
+### Rolling estimation of returns
  
-This gives us the K most recent values - this helps with business cycle and market direction. There are consistent period of calm and stress (bigger volatility). therefore current perormance is better estimate whn we give more weight ot recent observations than to the distant observations. This help accounts for differing business cycles - rolling estimation  
+We also need to consider the rolling estimation of returns within out portfolio, which is using the K most recent values to help inform us of the business cycle and market direction. These are persistent periods of calm and/or stress in the market. Therefore, current performance is better estimated when we give more weight to recent observations than to the distant observations, as it captures the current business cycle.
 
-How do you pick your window length - large enough to reduce noise, but the trade off for making the window longer is that it's more smooth over the highs and lows over the data and the less informative it necewoam of the most recently observed performance. 
+We pick a window length that's large enough to reduce the noise of the market, but the longer the window is the more it smooths over the highs and lows and thereby becoming less informative of the current market conditions. This is down to personal preference, and we believe it's best to go with a 1 year rolling estimation.
+
+The plots below show the rolling annualized returns, standard deviations (volatility) and the Sharpe ratio for S&P 500, Bitcoin and US Gold. This reveals both **how volatile Bitcoin is, as well as how high the returns can be**. It also reveals, the continually changing behavior's of the equities within the market, and how the Sharpe ratio changes over time.
 
 
 ```{r window-performance}
@@ -169,20 +143,22 @@ chart.RollingPerformance(R = returns, width = 12, FUN = "StdDev.annualized", leg
 chart.RollingPerformance(R = returns, width = 12, FUN = "SharpeRatio.annualized", Rf = 0, legend.loc = "topleft",colorset = rich8equal, lwd = 2, main = "Rolling 12-Month Sharpe Ratio")
 
 ```
-## Measring risk to returns
+
+## Measring porfolio risk to returns
 
 ### Non-normal returns and downside risk
 
-Portfolio return has a normal distribution and the density function is bell shaped - and symmetric such gains and losses occur in equal amounts. however, this isn't typical of most stocks and have longer fatter tails at negative values. Non-normal return is skewed tot he left, More extreme negative values happening that is possible under a normal distribution. Therefore the SD is not enough of a measure for volatility.
+If Portfolio returns have a normal distribution and the density function is bell shaped this means it's symmetric and gains and losses occur in equal amounts. However, this isn't typical of most stocks, which have longer fatter tails at negative values. We also use the skewness and kurtosis (symmetry and tail fatness) of the distribution to inform on risk. Left-skewed means that more negative values occurs more often than large positive returns (long left tail).Fat tails are a cause of non-normality, which means fatter-tails are a sign of larger extreme values occurring in the distribution. Non-normal returns are often skewed to the left, and more extreme negative values happen than what one would expect under a normal distribution. The s.d is not enough of a measure for volatility.
 
-There is a downside risk measure (through SD) is to remove the higher than average returns. This semi-deviation describes the average variability of the lower than average returns sqrt around the mean. 
+There are other measures - such as the value at risk and expected shortfall (at 5%), as a way of capturing the inherent risk in each equity. To explain, the value at risk quantifies the risk of the 5% most extreme losses - 5% value at risk are returns that are so extremely negative,  there is a 5% change of observing a return that is even more negative. We can compute the value of the 5% most negative returns - thus giving the 5% expected shortfall.
 
-There is other measures such as the value at risk and expected shortfall (at 5%),
-To explain - the value at risk quantifies the risk of the 5% most extreme losses - 5% value at risk is are returns that are so extremely negative,  there is a 5% change of observing a return that is even more negative. Then compute the value of the those 5% most negative returns - thus, the 5% expected shortfall.
+Using the below information we can infer that:  
 
-There is also reports of skewness and kurtosis (symmetry and tail fatness). Left-skewed means that more negative values occurs more often than large positive returns (long left tail). fat tails are a cause of non-normality, which means fatter-tails larger extreme values that occur. 
-
-
+* Bitcoin presents the most symmetric distribution, but these gains and losses come in a larger magnitude,
+* Bitcoin has the highest downside risk, largest drawdowns, and loss Deviation, compared to the three other equities,
+* However, Bitcoin has also seen the highest market returns compared to the other equities.
+* US Gold is the least volatile equity of the three, but also presents the lowest returns.
+* The S&P 500 performance is the best, with relatively low volatility and modest returns.
 
 ```{r}
 
@@ -190,46 +166,37 @@ There is also reports of skewness and kurtosis (symmetry and tail fatness). Left
 ##
   returns_lastyr <-  Return.calculate(last(Cl(bitcoin_xts), n = 365))[-c(1),]
   returns_lastyr_sp <-  Return.calculate(last(Cl(sp500_xts), n = 365))[-c(1),]
+  returns_lastyr_gd <-  Return.calculate(last(monthly_xts[,1], n = 365))[-c(1),]
   names(returns_lastyr) <- "Bitcoin"
   names(returns_lastyr_sp) <- "S&P 500"
-  
+  names(returns_lastyr_gd) <- "Gold, USD"
   chart.Histogram(returns_lastyr, methods = c("add.density", "add.normal"))
   chart.Histogram(returns_lastyr_sp, methods = c("add.density", "add.normal"))
+  chart.Histogram(returns_lastyr_gd, methods = c("add.density", "add.normal"))
   
-  ##  NOTE: Can also calculate on montly periods
-  ##
-  skewness(returns_lastyr)
-  kurtosis(returns_lastyr)
-  
-  skewness(returns_lastyr_sp)
-  kurtosis(returns_lastyr_sp)
-  
-  ## can also calculate the SemiDeviation, value-at-risk, and the expected short fall to evaluated the risk of returns.
-  ##
-      SemiDeviation(returns)
-      VaR(returns, p = 0.05)
-      ES(returns, p = 0.05)
 ## more compactly put below
 ##
-table.DownsideRisk(returns)
+  
+risk_tbl <- table.DownsideRisk(returns)
+
+
+
+kable(risk_tbl) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
 
 ```
 
-These are all measures that describe risk over a period, but don't describe the worst-case of buying at peaks and selling at a rough. However, we can quantify draw downs - that is the worst case scenario for each stock
-
 ```{r}
-table.Drawdowns(returns)
-chart.Drawdown(returns)
+#table.Drawdowns(returns)
+chart.Drawdown(returns, legend.loc =3)
 
 ```
 
-## how to optimize future portfolio returns
+## How to optimize future portfolio returns
 
-there are typically three types of drivers for a portfolio's performance: (i) the individual performance of the assets in terms of risk and return, (ii) the portfolio weight of each of the assets, (iii) the correlation between the asset returns
+There are typically three types of drivers for a portfolio's performance: (i) the individual performance of the assets in terms of risk and return, (ii) the portfolio weight of each of the assets, (iii) the correlation between the asset returns. We've already discussed the general performance and weights. Finally, it's worth looking at the correlations between the three equities. 
 
-### weights
-
-```{r}
+```{r include = FALSE}
 # choose between two equities we cna find the optimal weight ratio thorugh sharpe
 
 bit_returns <- returns[,2]
@@ -252,168 +219,71 @@ abline(v = grid[vsharpe == max(vsharpe)], lty = 3)
 
 ```
 
+### Correlations
 
-### correlations
+We can also visualize the correlation between differing stocks. If there are more correlated this typically increases variance as when one suffers loss, it is likely so will the other. Thus increasing the risks. These are drivers with the case of two assets in the portfolio. 
 
-We can also visualise the correlation between differing stocks. If there are more correlated this typically increases variance as when one suffers loss, it is likely so will the other. thus increasing the risks. These are drivers with he case of two assets in the portfolio. 
+As shown below we can see that there is some positive correlation between Bitcoin and S&P 500.This suggests that as one of the equities fall or increase, it is likely that the other will follow. Suggesting they are both somewhat exposed to the same market conditions.  
+
+However, gold appears to be negatively correlated with Bitcoin. This suggests that as Bitcoin falls, gold will increase and acts as a natural hedge for each other. 
+
 ```{r}
 
 ## note this is all monthly  - can break this down to daily
 ## correlation
-cor(bit_returns, sp_returns)
+#cor(bit_returns, sp_returns)
 
+gold_returns <- returns[,1]
+#cor(bit_returns, gold_returns)
 
 ## scatter plot
-chart.Scatter(bit_returns, sp_returns, xlab = "bitcoin returns", ylab = "S&P 500 returns", main = "equity returns")
+#chart.Scatter(bit_returns, sp_returns, xlab = "bitcoin returns", ylab = "S&P 500 returns", main = "equity returns")
 
-chart.Correlation(merge(bit_returns,sp_returns))
-
+#chart.Correlation(merge(bit_returns,sp_returns))
 
 ## rolling estimates 6 month windows
-chart.RollingCorrelation(bit_returns, sp_returns, width = 6)
-```
- 
-We can extend this across all the assets - bicoin, gold, SP500.
+#chart.RollingCorrelation(bit_returns, sp_returns, width = 6)
 
-```{r n-assets }
-
-## get vector of mean returns across all assets to plot expectured return vs their risk (variance)
-
-means <- apply(returns,2, "mean")
-sds <- apply(returns,2, "mean")
-
-plot.zoo(sds, means)
-text(sds, means, labels = colnames(returns), cex = 0.7)
-abline(h = 0, lty = 3)
+chart.Correlation(merge(bit_returns,sp_returns, gold_returns))
 ```
 
+```{r n-assets, include = FALSE}
 
+## get vector of mean returns across all assets to plot expected return vs their risk (variance)
 
-### Who did it?
-
-Portfolio analysis of each assets risk contributions
-
-```{r}
-## get conribtiuon for eacha ssets risk
-vol_budget <- StdDev(returns, portfolio_method = "component", weights = weights_val)
-
-weights_percrisk <- cbind(weights_val, vol_budget$pct_contrib_StdDev)
-
-colnames(weights_percrisk) <- c("weights", "perc vol contrib")
-print(weights_percrisk)
-plot(weights_percrisk)
+# means <- apply(returns,2, "mean")
+# sds <- apply(returns,2, "mean")
+# 
+# plot.zoo(sds, means)
+# text(sds, means, labels = colnames(returns), cex = 0.7)
+# abline(h = 0, lty = 3)
 ```
 
-## Modern portfolio theory of Harry Markowitz
+### A quick word on Harry Markowitz's modern portfolio theory
 
-You can optimize your portfolio performance by setting targets and constraints to get you either highest return or lowest variability of some combinations that allows for higher return for lowest variability. by setting weight constrains it sops your portfolio form being completely dominated by just a few assets.
+You can optimize your portfolio performance by setting targets and constraints to give, either the highest return or lowest variability for some combinations of weights within the portfolio. Additionally, it's important to set weight constrains that stop your portfolio form being completely dominated by just a few assets.
 
-```{r}
-# Create a vector of row means
-ew_preturns <- rowMeans(returns)
+Depending on the return targets you set, you find the optimal weights in your portfolio that give you the lowest portfolio variability. A high return target, means higher variability. Mapping out all the return optimization you can obtain the efficient frontier. 
 
-# Cast the numeric vector back to an xts object
-ew_preturns <- xts(ew_preturns, order.by = time(returns))
+The portfolio that starts the curve is called the minimum variance portfolio, and it's where the return is sufficiently higher than the risk free rate. It's the portfolio that solves the problem of minimized variance without a constraint on expected returns.
 
-# Plot ew_preturns
-plot.zoo(ew_preturns)
+You can evaluate each portfolio on the efficient frontier's Sharpe ratio - you can a find a line that is tangent to the portfolio frontier - this is called the tangency portfolio - this portfolio is the one that has the highest Sharpe ratio meaning, it's the highest return on the portfolio per unit of portfolio risk (variability). 
 
-opt <- portfolio.optim(returns)
+### Better Optimizations for portfolio specifications 
 
-# Create pf_weights
-pf_weights <- opt$pw
+With the above in mind, the aim of this portfolio is to minimize portfolio volatility. We will heavily leverage from the PortfolioAnalytics package so search for the optimal portfolio weights across the 3 assets, gold, S&P 500 and Bitcoin and find our tangency portfolio.
 
-# Assign asset names
-names(pf_weights) <- colnames(returns)
+Firstly, we want to define a benchmark for a accurately measuring the relative performance of our portfolio. Then introduce some more constraints to see which portfolio performs the 'best' for the company.
 
-# Select optimum weights opt_weights
-opt_weights <- pf_weights[pf_weights >= 0.01]
+Each portfolio will be re-balanced quarterly, and back-tested on historical data. The analysis will be conducted as follows:
 
-# Bar plot of opt_weights
-barplot(opt_weights)
+1. Specify an equal weight portfolio,
+2. Introduce a base portfolio specification that minimizes the portfolio standard deviation subject to full investment and long only constraints.
+3. Add a box constraint with a lower and upper bound on the weights - such that the weight of assets don't go above or below a specified amount. In this case, we will set the minimum investment amount to 5% of any equity, **to avoid the portfolio being completely dominated by one asset**.
 
-# Print expected portfolio return and volatility
-opt$pm
-opt$ps
+The below graphs and figures show the performance of each portfolio on an annualized basis, plus the optimal set of weights, the Sharpe ratio and variability.
 
-# Create portfolio with target return of average returns 
-pf_mean <- portfolio.optim(returns, pm = mean(returns))
-
-# Create portfolio with target return 10% greater than average returns
-pf_10plus <- portfolio.optim(returns, pm = 1.1 * mean(returns))
-
-
-# Print the standard deviations of both portfolios
-pf_mean$ps
-pf_mean$ps
-
-# Calculate the proportion increase in standard deviation
-(pf_10plus$ps - pf_mean$ps) / (pf_mean$ps)
-
-```
-
-depending on the return targets you set, you find the optminal weights in your portfolio give you the lowest portfolio variability. The higher the return target, means higher variability. Mapping out all the return optimization you can obtains the efficient frontier. The portfolio that starts in called the minimum variance portfolio and it's the one where the return is sufficiently higher than the risk free rate. It is he portfolio that solves the problem of minimize variance without and constraint on expected returns.
-
-You can evaluate each portfolio on the efficient frontier's sharpe ratio - you can a find a line that is tangent to the portfolio frontier - this is called the tangency portfolio - this portfolio is the one that has the highest sharpe ratio meaning that it is the highest return on the portfolio per unit of porfolio risk (variability). 
-
-
-### split sample analysis
-
-Because of estimation error through  mean estiamtion and variance estimation there is estimation error in the optimization weights.
-However we can use split sample analysis to evaluate in an object way what the future performance of an optimized portfolio performance could be.
-
-```{r}
-## split retunrs data into two
-
-# Create returns_estim 
-returns_estim <- window(returns, start = "2014-09-01", end = "2017-12-01")
-
-# Create returns_eval
-returns_eval  <- window(returns, start = "2018-01-01", end  = "2021-11-01")
-
-# Create portfolio with estimation sample 
-pf_estim <- portfolio.optim(returns_estim)
-
-# Create portfolio with evaluation sample
-pf_eval <- portfolio.optim(returns_eval)
-
-plot.zoo(pf_estim$pw, pf_eval$pw)
-abline(a = 0, b = 1, lty = 3)
-
-
-## let's have a look at how well the portfolio might have done!
-# Create returns_pf_estim
-returns_pf_estim <- Return.portfolio(returns_estim, pf_estim$pw, rebalance_on = "months")
-
-# Create returns_pf_eval
-returns_pf_eval <- Return.portfolio(returns_eval, pf_estim$pw, rebalance_on = "months")
-
-# Print a table for your estimation portfolio
-table.AnnualizedReturns(returns_pf_estim)
-
-# Print a table for your evaluation portfolio
- table.AnnualizedReturns(returns_pf_eval)
-
-```
-
-
-### Better Optimizations an portfolio specifications - 
-
-note the aim of this portfolio is one where we want to minimize portfolio volatility
-So let's dive into the optimization process with the package PortfolioAnalytics to find the optimal portfolio weights across the 3 assets, gold, S&P 500 and Bitcoin.
-
-
-
-Firstly, we want to define a benchmark for a accurately measuring the relative performance of our portfolio.
-The benchmark will be without the bitcoin and then check to see how performance improves with bitcoin - we can also construct an equal weight benchmark of the 3 assets to invest in.
-
-We will also start with a base portfolio specification and then hypothesis ways to improve the risk adjusted portfolio by confining constraints, objectives and possibly moment estimates.
-
-The base portfolio specification is to minimize portfolio standard deviation subject to full investment and long only constraints. 
-
-We will run re balancing to see how it performs historically.
-
-```{r}
+```{r, include = FALSE}
 ## construct the benchmark base
 ##
 returns_bench <- returns[]
@@ -427,12 +297,11 @@ colnames(r_benchmark) <- "benchmark"
 
 # Plot the benchmark returns
 
-plot(r_benchmark)
+#plot(r_benchmark)
 
 ```
 
-
-```{r optomize}
+```{r optomize, include = FALSE}
 
 ## to compare against the benchmark let's create the an optimized portfolio
 
@@ -473,11 +342,7 @@ print(opt)
   
 ```
 
-### perhpas we add a concentration risk
-
-add a box constraint to add a lower and upper bound to weights - such that the weight of assets 
-
-```{r box-constraint}
+```{r box-constraint, include = FALSE}
 
 ## Copy the specification
 box_con_spec <- port_spec
@@ -498,44 +363,84 @@ chart.Weights(box_opt)
   charts.PerformanceSummary(rb)
 ```
 
-
-Let's add a risk budget objective to set a minimum and maximum percent contribution to risk for each asset
-
 ```{r}
+# 
+# port_spec <- add.constraint(portfolio = port_spec, 
+#                            type = "risk_budget", 
+#                            name = "StdDev", 
+#                            min_prisk = 0.05, 
+#                            max_prisk = 0.4)
+# 
+# 
+# # Run the optimization
+# opt_rebal_rb <- optimize.portfolio.rebalancing(R = returns, 
+#                                                portfolio = port_spec, 
+#                                                optimize_method = "random",
+#                                                trace = TRUE,
+#                                                rebalance_on = "quarters", 
+#                                                training_period = 60,
+#                                                rolling_window = 60)
+# 
 
-port_spec <- add.constraint(portfolio = port_spec, 
-                           type = "risk_budget", 
-                           name = "StdDev", 
-                           min_prisk = 0.05, 
-                           max_prisk = 0.4)
 
+## Chart all weights
 
-# Run the optimization
-opt_rebal_rb <- optimize.portfolio.rebalancing(R = returns, 
-                                               portfolio = port_spec, 
-                                               optimize_method = "random",
-                                               trace = TRUE,
-                                               rebalance_on = "quarters", 
-                                               training_period = 60,
-                                               rolling_window = 60)
+barplot(equal_weights, main = "Benchmark Weights")
+#
+chart.Weights(opt, main  = "Base Weights")
+
+#
+chart.Weights(box_opt, main  = "Box constraints Weights")
+
 # Chart the weights
-chart.Weights(opt_rebal_rb)
+# chart.Weights(opt_rebal_rb, main = "Risk Budget Weights")
+
+
 
 # Chart the percentage contribution to risk
 #chart.RiskBudget(opt_rebal_rb, match.col = "StdDev", risk.type = "percentage")
 
 # Compute the portfolio returns
-returns_rb <- Return.portfolio(R = returns, weights = extractWeights(opt_rebal_rb))
+# returns_rb <- Return.portfolio(R = returns, weights = extractWeights(opt_rebal_rb))
 
-colnames(returns_rb) <- "risk_budget"
+# colnames(returns_rb) <- "risk_budget"
 
-ret <- cbind(r_benchmark, rr, rb, returns_rb)
+ret <- cbind(r_benchmark, rr, rb)
+
 
 ## check annualized performance
 ##
-  table.AnnualizedReturns(ret)
+  rets_tbl <- table.AnnualizedReturns(ret)
+  
+  
+  kable( rets_tbl) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
 
 ## Chart the performance summary
 charts.PerformanceSummary(R = ret)
 ```
+
+### Output results and a portfolio conclusion
+
+The final output from the portfolio analysis shows that the benchmark of an equal 1/3 split weight in equities, experiences the highest annual returns, however, this is at the expense of having the highest portfolio volatility. 
+
+The base optimization portfolio, experiences the lowest returns across all portfolios but performs the best in portfolio risk mitigation. Finally, the box constraints hit a **Goldie locks** combination, where the best returns are a achieved without exposing the company to unnecessary risk.
+
+This is confirmed by also having the highest Sharpe ratio, meaning this portfolio produces the highest return per unit of risk compared to the other two portfolios. This renders the optimal portfolio for the company, with shares approximately at 60% in US gold, 35% in the S&P 500 and 5% in Bitcoin.
+
+## Citations
+
+  Brian G. Peterson and Peter Carl (2020). PerformanceAnalytics: Econometric Tools for Performance
+  and Risk Analysis. R package version 2.0.4. https://github.com/braverock/PerformanceAnalytics
+  
+  Brian G. Peterson and Peter Carl (2018). PortfolioAnalytics: Portfolio Analysis, Including
+  Numerical Methods for Optimization of Portfolios. R package version 1.1.0.
+  https://github.com/braverock/PortfolioAnalytics
+  
+  Jeffrey A. Ryan and Joshua M. Ulrich (2020). quantmod: Quantitative Financial Modelling Framework.
+  http://www.quantmod.com https://github.com/joshuaulrich/quantmod.
+  
+  
+  Jeffrey A. Ryan and Joshua M. Ulrich (2020). xts: eXtensible Time Series. R package version
+  0.12.1. https://github.com/joshuaulrich/xts
 
