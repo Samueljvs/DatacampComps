@@ -1,3 +1,5 @@
+🥈 Congratulations! You won 2nd prize in the DataCamp Competition!
+
 # Background
 You work as an analyst at an investment fund in New York. Your CFO wants to explore if it is a good idea to invest some of the fund's assets in Bitcoin. You have to prepare a report on this asset and how it compares to the stock market in general.
 
